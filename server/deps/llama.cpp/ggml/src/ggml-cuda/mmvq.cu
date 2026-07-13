@@ -273,7 +273,9 @@ struct mmid_gate_extra {
 static bool mmid_grouped_env() {
     // Bit-exact and measured equal-or-faster on small MoE verify batches, so
     // enabled by default on CUDA; DFLASH_MMID_GROUPED=0 is the kill switch.
-    // HIP is unvalidated and stays opt-in (DFLASH_MMID_GROUPED=1).
+    // HIP (RDNA3/RDNA4) is wired but unvalidated on-hardware, so it stays opt-in
+    // and default-off (DFLASH_MMID_GROUPED=1 to enable); flip the default once the
+    // gfx1151 bit-exact + perf run lands.
     static const bool on = []() {
         const char * e = std::getenv("DFLASH_MMID_GROUPED");
         if (e != nullptr) {
@@ -316,7 +318,12 @@ static bool mmid_grouped_type_ok(ggml_type type) {
 int get_mmvq_mmid_max_batch(ggml_type type, int cc) {
     // [TAG_MMID_GROUPED] the grouped kernel handles any supported type up to the
     // MoE batch ceiling; this also keeps CUDA graphs on for these batches.
-    if (mmid_grouped_env() && mmid_grouped_type_ok(type) && GGML_CUDA_CC_IS_NVIDIA(cc) && cc >= GGML_CUDA_CC_TURING) {
+    // RDNA3/RDNA4 (wave32) share the non-grouped kernel's wave-width warp_reduce.
+    // IS_RDNA3/IS_RDNA4 are pure cc-range checks, safe above the IS_AMD guard below.
+    // The HIP path remains opt-in until on-hardware parity and performance validation.
+    if (mmid_grouped_env() && mmid_grouped_type_ok(type) &&
+        ((GGML_CUDA_CC_IS_NVIDIA(cc) && cc >= GGML_CUDA_CC_TURING) ||
+         GGML_CUDA_CC_IS_RDNA3(cc) || GGML_CUDA_CC_IS_RDNA4(cc))) {
         return MMVQ_MAX_MOE_BATCH_SIZE;
     }
     // Dedicated multi-token MoE kernel: extend the MUL_MAT_ID ceiling to 16
