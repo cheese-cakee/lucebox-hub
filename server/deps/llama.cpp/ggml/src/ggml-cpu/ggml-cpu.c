@@ -2625,6 +2625,7 @@ static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads) {
         case GGML_OP_DS4_INDEXER_QAT:
         case GGML_OP_DS4_INDEXER_SCORE:
         case GGML_OP_DS4_INDEXER_MASK:
+        case GGML_OP_DS4_MOE_COMBINE:
         case GGML_OP_FLASH_ATTN_EXT:
         case GGML_OP_FLASH_ATTN_SPARSE:
         case GGML_OP_PAGED_ATTN:

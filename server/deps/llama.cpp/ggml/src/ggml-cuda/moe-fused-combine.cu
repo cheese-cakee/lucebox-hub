@@ -72,6 +72,19 @@ void ggml_cuda_op_ds4_moe_combine(ggml_backend_cuda_context & ctx, ggml_tensor *
     const int n_tokens = (int) down_e->ne[2];
 
     GGML_ASSERT(n_embd % 4 == 0 && "n_embd must be a multiple of 4 for float4 vectorization");
+    GGML_ASSERT(reinterpret_cast<uintptr_t>(down_e->data) % 16 == 0 && "down_e->data must be 16-byte aligned");
+    GGML_ASSERT(reinterpret_cast<uintptr_t>(dst->data) % 16 == 0 && "dst->data must be 16-byte aligned");
+    GGML_ASSERT(down_e->nb[0] == sizeof(float) && "down_e must be contiguous in dimension 0");
+    GGML_ASSERT(down_e->nb[1] % sizeof(float4) == 0 && "down_e->nb[1] must be divisible by sizeof(float4)");
+    GGML_ASSERT(down_e->nb[2] % sizeof(float4) == 0 && "down_e->nb[2] must be divisible by sizeof(float4)");
+    GGML_ASSERT(dst->nb[0] == sizeof(float) && "dst must be contiguous in dimension 0");
+    GGML_ASSERT(dst->nb[1] % sizeof(float4) == 0 && "dst->nb[1] must be divisible by sizeof(float4)");
+    if (shared_out != nullptr) {
+        GGML_ASSERT(reinterpret_cast<uintptr_t>(shared_out->data) % 16 == 0 && "shared_out->data must be 16-byte aligned");
+        GGML_ASSERT(shared_out->nb[0] == sizeof(float) && "shared_out must be contiguous in dimension 0");
+        GGML_ASSERT(shared_out->nb[1] % sizeof(float4) == 0 && "shared_out->nb[1] must be divisible by sizeof(float4)");
+    }
+
     const int n_embd_vec4 = n_embd / 4;
     const int total_threads = n_embd_vec4 * n_tokens;
 
