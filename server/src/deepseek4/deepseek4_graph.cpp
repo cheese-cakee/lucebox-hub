@@ -5162,7 +5162,14 @@ static bool build_prefill_hc_pre_graph(
     if (!backend || !fn_f16 || !base || !scale_data || n_tokens <= 0) {
         return false;
     }
-    out.free();
+    if ((out.owner_ctx && out.owner_ctx != w.ctx) ||
+        (out.backend && out.backend != backend)) {
+        out.free();
+    } else {
+        // Keep the largest scratch buffer while replacing layer-specific graph
+        // metadata and tensor handles.
+        out.reset_graph();
+    }
 
     ggml_init_params params{};
     params.mem_size = 8 * 1024 * 1024;
