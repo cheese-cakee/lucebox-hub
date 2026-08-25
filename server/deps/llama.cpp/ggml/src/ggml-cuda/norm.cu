@@ -300,9 +300,13 @@ static void rms_norm_f32_cuda(
     const dim3 blocks_num(nrows, nchannels, nsamples);
     if (ncols < 1024) {
         const dim3 block_dims(256, 1, 1);
+        std::fprintf(stderr, "[debug-rms-norm-kernel] launching 256 blocks=(%d,%d,%d) x=%p dst=%p ncols=%d nrows=%d s_row=%ld\n",
+            blocks_num.x, blocks_num.y, blocks_num.z, (const void*)x, (void*)dst, ncols, nrows, (long)stride_row);
         rms_norm_f32<256, false><<<blocks_num, block_dims, block_dims.x > WARP_SIZE ? 32 * sizeof(float): 0, stream>>>(x, dst, ncols, stride_row, stride_channel, stride_sample, eps);
     } else {
         const dim3 block_dims(1024, 1, 1);
+        std::fprintf(stderr, "[debug-rms-norm-kernel] launching 1024 blocks=(%d,%d,%d) x=%p dst=%p ncols=%d nrows=%d s_row=%ld\n",
+            blocks_num.x, blocks_num.y, blocks_num.z, (const void*)x, (void*)dst, ncols, nrows, (long)stride_row);
         rms_norm_f32<1024, false><<<blocks_num, block_dims, block_dims.x > WARP_SIZE ? 32 * sizeof(float): 0, stream>>>(x, dst, ncols, stride_row, stride_channel, stride_sample, eps);
     }
 }

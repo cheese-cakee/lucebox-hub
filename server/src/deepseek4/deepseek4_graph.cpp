@@ -7438,6 +7438,9 @@ bool deepseek4_step_layer_range(
             std::fprintf(stderr, "[debug-trace] layer %d build_prefill_hc_pre_graph OK\n", il);
             if (telemetry) telemetry->hc_pre_build_us += ds4_elapsed_us(
                 hc_pre_attn_build_t0, Ds4TimingClock::now());
+            std::fprintf(stderr, "[debug-hc-copy] hc_state_backend=%p (data=%p nbytes=%zu buf=%p) inp_embed=%p (data=%p nbytes=%zu buf=%p)\n",
+                (void*)hc_state_backend, hc_state_backend ? hc_state_backend->data : nullptr, hc_state_backend ? ggml_nbytes(hc_state_backend) : 0, hc_state_backend ? (void*)hc_state_backend->buffer : nullptr,
+                (void*)prefill_hc_pre_graph.sg.inp_embed, prefill_hc_pre_graph.sg.inp_embed ? prefill_hc_pre_graph.sg.inp_embed->data : nullptr, prefill_hc_pre_graph.sg.inp_embed ? ggml_nbytes(prefill_hc_pre_graph.sg.inp_embed) : 0, prefill_hc_pre_graph.sg.inp_embed ? (void*)prefill_hc_pre_graph.sg.inp_embed->buffer : nullptr);
             ggml_backend_tensor_copy(hc_state_backend,
                                      prefill_hc_pre_graph.sg.inp_embed);
             std::fprintf(stderr, "[debug-trace] layer %d ggml_backend_tensor_copy inp_embed OK\n", il);
