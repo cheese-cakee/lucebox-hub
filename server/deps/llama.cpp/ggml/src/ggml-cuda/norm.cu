@@ -455,6 +455,10 @@ void ggml_cuda_op_rms_norm(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     float * dst_d = (float *) dst->data;
     cudaStream_t stream = ctx.stream();
 
+    std::fprintf(stderr, "[debug-rms-norm] src0=%p (data=%p ne=[%ld,%ld]) dst=%p (data=%p ne=[%ld,%ld]) ctx.device=%d\n",
+        (void*)src0, (void*)src0_d, (long)src0->ne[0], (long)src0->ne[1],
+        (void*)dst, (void*)dst_d, (long)dst->ne[0], (long)dst->ne[1], ctx.device);
+
     GGML_ASSERT(src0->type == GGML_TYPE_F32);
     GGML_ASSERT( dst->type == GGML_TYPE_F32);
 
