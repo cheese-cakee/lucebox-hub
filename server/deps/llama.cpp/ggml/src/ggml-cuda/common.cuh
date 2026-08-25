@@ -1415,8 +1415,18 @@ struct ggml_cuda_stream_context {
 
 struct ggml_backend_cuda_context {
     int device;
-    std::string name;
-    cudaEvent_t copy_event = nullptr;
+    static constexpr int EVENT_RING_DEPTH = 8;
+    cudaEvent_t copy_events[EVENT_RING_DEPTH] = {nullptr};
+    int copy_event_idx = 0;
+
+    cudaEvent_t get_next_copy_event() {
+        if (!copy_events[copy_event_idx]) {
+            CUDA_CHECK(cudaEventCreateWithFlags(&copy_events[copy_event_idx], cudaEventDisableTiming));
+        }
+        cudaEvent_t ev = copy_events[copy_event_idx];
+        copy_event_idx = (copy_event_idx + 1) % EVENT_RING_DEPTH;
+        return ev;
+    }
 
     // LUCE_Q8_MEMO=1: memoize q8_1-quantized src1 activations across the
     // quantized matmuls of ONE graph evaluation (Q/K/V/gate/router/shexp all

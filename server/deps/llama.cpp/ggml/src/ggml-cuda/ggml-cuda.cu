@@ -32,6 +32,7 @@
 #include "ggml-cuda/mmq.cuh"
 #include "ggml-cuda/mmvf.cuh"
 #include "ggml-cuda/mmvq.cuh"
+#include "ggml-cuda/moe-fused-combine.cuh"
 #include "ggml-cuda/rocmfp3_mix.cuh"
 #include "ggml-cuda/rocmfp2_mix.cuh"
 #include "ggml-cuda/norm.cuh"
@@ -731,8 +732,11 @@ ggml_backend_cuda_context::~ggml_backend_cuda_context() {
         luce_q8_memo.pop_back();
     }
 
-    if (copy_event != nullptr) {
-        CUDA_CHECK(cudaEventDestroy(copy_event));
+    for (int i = 0; i < ggml_backend_cuda_context::EVENT_RING_DEPTH; ++i) {
+        if (copy_events[i] != nullptr) {
+            CUDA_CHECK(cudaEventDestroy(copy_events[i]));
+            copy_events[i] = nullptr;
+        }
     }
     for (int i = 0; i < GGML_CUDA_MAX_DEVICES; ++i) {
         for (int j = 0; j < GGML_CUDA_MAX_STREAMS; ++j) {
@@ -3418,6 +3422,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
         case GGML_OP_DS4_INDEXER_MASK:
             ggml_cuda_op_ds4_indexer_mask(ctx, dst);
             break;
+        case GGML_OP_DS4_MOE_COMBINE:
+            ggml_cuda_op_ds4_moe_combine(ctx, dst);
+            break;
         case GGML_OP_GROUP_NORM:
             ggml_cuda_op_group_norm(ctx, dst);
             break;
@@ -3715,16 +3722,13 @@ static void ggml_cuda_flush_peer_copy_batch(const char * reason) {
 
     GGML_ASSERT(batch.src && batch.dst);
     ggml_cuda_set_device(batch.src->device);
-    if (!batch.src->copy_event) {
-        CUDA_CHECK(cudaEventCreateWithFlags(
-            &batch.src->copy_event, cudaEventDisableTiming));
-    }
+    cudaEvent_t copy_ev = batch.src->get_next_copy_event();
     CUDA_CHECK(cudaEventRecord(
-        batch.src->copy_event, batch.src->stream()));
+        copy_ev, batch.src->stream()));
 
     ggml_cuda_set_device(batch.dst->device);
     CUDA_CHECK(cudaStreamWaitEvent(
-        batch.dst->stream(), batch.src->copy_event, 0));
+        batch.dst->stream(), copy_ev, 0));
 
     static const bool trace = [] {
         const char * value = getenv("GGML_CUDA_BATCH_PEER_COPY_TRACE");
@@ -3805,18 +3809,14 @@ static bool ggml_backend_cuda_cpy_tensor_async(ggml_backend_t backend_src, ggml_
 #endif // GGML_CUDA_NO_PEER_COPY
         }
 
-        if (!cuda_ctx_src->copy_event) {
-            ggml_cuda_set_device(cuda_ctx_src->device);
-            CUDA_CHECK(cudaEventCreateWithFlags(&cuda_ctx_src->copy_event, cudaEventDisableTiming));
-        }
-        {
-            CUDA_CHECK(cudaEventRecord(
-                cuda_ctx_src->copy_event, cuda_ctx_src->stream()));
-        }
+        ggml_cuda_set_device(cuda_ctx_src->device);
+        cudaEvent_t copy_ev = cuda_ctx_src->get_next_copy_event();
+        CUDA_CHECK(cudaEventRecord(
+            copy_ev, cuda_ctx_src->stream()));
 
         // wait on dst stream for the copy to complete
         CUDA_CHECK(cudaStreamWaitEvent(
-            cuda_ctx_dst->stream(), cuda_ctx_src->copy_event, 0));
+            cuda_ctx_dst->stream(), copy_ev, 0));
     } else {
         // src and dst are on the same backend
 #if defined(GGML_USE_HIP)
@@ -5913,6 +5913,11 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                    op->src[1]->type == GGML_TYPE_I32 &&
                    ggml_is_contiguous(op->src[0]) &&
                    ggml_is_contiguous(op->src[1]);
+        case GGML_OP_DS4_MOE_COMBINE:
+            return op->src[0]->type == GGML_TYPE_F32 &&
+                   op->src[1]->type == GGML_TYPE_F32 &&
+                   op->src[0]->ne[0] % 4 == 0 &&
+                   (op->src[2] == nullptr || op->src[2]->type == GGML_TYPE_F32);
         case GGML_OP_MUL_MAT:
         case GGML_OP_MUL_MAT_GROUPED_SRC:
         case GGML_OP_MUL_MAT_ID:
