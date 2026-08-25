@@ -732,11 +732,9 @@ ggml_backend_cuda_context::~ggml_backend_cuda_context() {
         luce_q8_memo.pop_back();
     }
 
-    for (int i = 0; i < ggml_backend_cuda_context::EVENT_RING_DEPTH; ++i) {
-        if (copy_events[i] != nullptr) {
-            CUDA_CHECK(cudaEventDestroy(copy_events[i]));
-            copy_events[i] = nullptr;
-        }
+    if (copy_event != nullptr) {
+        CUDA_CHECK(cudaEventDestroy(copy_event));
+        copy_event = nullptr;
     }
     for (int i = 0; i < GGML_CUDA_MAX_DEVICES; ++i) {
         for (int j = 0; j < GGML_CUDA_MAX_STREAMS; ++j) {
@@ -3722,13 +3720,16 @@ static void ggml_cuda_flush_peer_copy_batch(const char * reason) {
 
     GGML_ASSERT(batch.src && batch.dst);
     ggml_cuda_set_device(batch.src->device);
-    cudaEvent_t copy_ev = batch.src->get_next_copy_event();
+    if (!batch.src->copy_event) {
+        CUDA_CHECK(cudaEventCreateWithFlags(
+            &batch.src->copy_event, cudaEventDisableTiming));
+    }
     CUDA_CHECK(cudaEventRecord(
-        copy_ev, batch.src->stream()));
+        batch.src->copy_event, batch.src->stream()));
 
     ggml_cuda_set_device(batch.dst->device);
     CUDA_CHECK(cudaStreamWaitEvent(
-        batch.dst->stream(), copy_ev, 0));
+        batch.dst->stream(), batch.src->copy_event, 0));
 
     static const bool trace = [] {
         const char * value = getenv("GGML_CUDA_BATCH_PEER_COPY_TRACE");
@@ -3810,13 +3811,16 @@ static bool ggml_backend_cuda_cpy_tensor_async(ggml_backend_t backend_src, ggml_
         }
 
         ggml_cuda_set_device(cuda_ctx_src->device);
-        cudaEvent_t copy_ev = cuda_ctx_src->get_next_copy_event();
+        if (!cuda_ctx_src->copy_event) {
+            CUDA_CHECK(cudaEventCreateWithFlags(
+                &cuda_ctx_src->copy_event, cudaEventDisableTiming));
+        }
         CUDA_CHECK(cudaEventRecord(
-            copy_ev, cuda_ctx_src->stream()));
+            cuda_ctx_src->copy_event, cuda_ctx_src->stream()));
 
         // wait on dst stream for the copy to complete
         CUDA_CHECK(cudaStreamWaitEvent(
-            cuda_ctx_dst->stream(), copy_ev, 0));
+            cuda_ctx_dst->stream(), cuda_ctx_src->copy_event, 0));
     } else {
         // src and dst are on the same backend
 #if defined(GGML_USE_HIP)

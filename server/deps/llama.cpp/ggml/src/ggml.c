@@ -8947,13 +8947,21 @@ struct ggml_tensor * ggml_ds4_moe_fused_combine_shared(
     GGML_ASSERT(weights != NULL);
     GGML_ASSERT(down_e->type == GGML_TYPE_F32);
     GGML_ASSERT(weights->type == GGML_TYPE_F32);
+    GGML_ASSERT(down_e->nb[0] == sizeof(float));
     GGML_ASSERT(down_e->ne[0] % 4 == 0);
+    GGML_ASSERT(down_e->ne[3] == 1);
+    GGML_ASSERT(weights->nb[0] == sizeof(float));
     GGML_ASSERT(down_e->ne[1] == weights->ne[0]);
     GGML_ASSERT(down_e->ne[2] == weights->ne[1]);
+    GGML_ASSERT(weights->ne[2] == 1);
+    GGML_ASSERT(weights->ne[3] == 1);
     if (shared_out != NULL) {
         GGML_ASSERT(shared_out->type == GGML_TYPE_F32);
+        GGML_ASSERT(shared_out->nb[0] == sizeof(float));
         GGML_ASSERT(shared_out->ne[0] == down_e->ne[0]);
         GGML_ASSERT(shared_out->ne[1] == down_e->ne[2]);
+        GGML_ASSERT(shared_out->ne[2] == 1);
+        GGML_ASSERT(shared_out->ne[3] == 1);
     }
 
     struct ggml_tensor * result = ggml_new_tensor_2d(

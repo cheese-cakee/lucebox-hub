@@ -272,7 +272,8 @@ static void ggml_compute_forward_ds4_moe_combine(
             float sum = 0.0f;
             for (int e = 0; e < n_used; ++e) {
                 const float * exp_row = (const float *) ((const char *) down_e->data + (size_t) t * down_e->nb[2] + (size_t) e * down_e->nb[1]);
-                sum += exp_row[i] * w_row[e];
+                const float prod = exp_row[i] * w_row[e];
+                sum += prod;
             }
             if (sh_row) {
                 sum += sh_row[i];
