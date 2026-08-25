@@ -1198,6 +1198,24 @@ bool DeepSeek4Backend::compute_uniform_hybrid_placement(const DeepSeek4Weights &
         std::fprintf(stderr,
                      "[deepseek4-moe-tp] all routed experts assigned to the "
                      "secondary backend\n");
+    } else {
+        const char * env_mirror_flag = std::getenv("DFLASH_MOE_HOT_MIRROR");
+        const bool hot_mirror_enabled = !env_mirror_flag || (env_mirror_flag[0] != '0' && env_mirror_flag[0] != '\0');
+        if (hot_mirror_enabled) {
+            int mirror_count = 16;
+            if (const char * env_mirror = std::getenv("DFLASH_MOE_MIRROR_EXPERTS")) {
+                mirror_count = std::max(0, std::atoi(env_mirror));
+            }
+            if (mirror_count > 0) {
+                const int target_hot = std::min(w.n_expert, std::max(hot_per_layer, mirror_count));
+                if (target_hot <= budget.max_hot_per_layer) {
+                    hot_per_layer = target_hot;
+                }
+                std::fprintf(stderr,
+                             "[deepseek4] hot expert mirroring active: %d resident experts per layer on primary GPU (budget max=%d)\n",
+                             hot_per_layer, budget.max_hot_per_layer);
+            }
+        }
     }
     const bool concentrate_requested = tp.concentrate_secondary;
     bool concentrated = false;

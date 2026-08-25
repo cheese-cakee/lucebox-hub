@@ -105,6 +105,7 @@ struct MoeHybridLayerStorage {
     // after the `hot_active` calibration-placed experts. A spare slot holds a
     // swapped-in cold expert; LRU eviction keeps the cache bounded.
     int hot_active = 0;            // # calibration-placed (pinned) hot experts
+    int n_mirror = 0;              // # mirrored hot experts resident on primary GPU
     int cache_slots = 0;          // # spare slots (cache capacity)
     std::vector<int32_t> spare_global;  // [cache_slots] global expert in each slot (-1 empty)
     std::vector<uint64_t> spare_lru;    // [cache_slots] last-use tick
