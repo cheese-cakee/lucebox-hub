@@ -7420,6 +7420,7 @@ bool deepseek4_step_layer_range(
         const ggml_tensor * ffn_comb_backend = nullptr;
         const ggml_tensor * attn_split_backend = nullptr;
         const ggml_tensor * ffn_split_backend = nullptr;
+        std::fprintf(stderr, "[debug-trace] layer %d start n_tokens=%d\n", il, n_tokens);
         if (trace_prefill) {
             std::fprintf(stderr,
                          "[deepseek4-prefill-trace] layer=%d attention begin\n",
@@ -8169,6 +8170,7 @@ bool deepseek4_step_layer_range(
                     owner_outputs.cold =
                         prefill_moe_hc_post_graph.block_out_cold;
                 }
+                std::fprintf(stderr, "[debug-trace] layer %d calling eval_ds4_layer_range_hybrid_ffn ffn_device_join=%d\n", il, ffn_device_join ? 1 : 0);
                 if (!eval_ds4_layer_range_hybrid_ffn(
                         backend, w, L, il, n_tokens,
                         ffn_working.data(), ffn_in_backend,
@@ -8181,6 +8183,7 @@ bool deepseek4_step_layer_range(
                                  il);
                     return false;
                 }
+                std::fprintf(stderr, "[debug-trace] layer %d eval_ds4_layer_range_hybrid_ffn OK\n", il);
             } else {
                 if (hash_routed) {
                     const int n_used = n_expert_used;
