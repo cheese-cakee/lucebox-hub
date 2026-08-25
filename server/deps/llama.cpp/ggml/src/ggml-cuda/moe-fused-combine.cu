@@ -58,6 +58,44 @@ static __global__ void moe_fused_combine_shared_kernel_f32(
     output[h4 + t * out_nb1] = make_float4(sum0, sum1, sum2, sum3);
 }
 
+static __global__ void moe_fused_combine_shared_kernel_scalar_f32(
+        const float * __restrict__ down_e,
+        const float * __restrict__ weights,
+        const float * __restrict__ shared_out,
+        float       * __restrict__ output,
+        const int n_embd,
+        const int n_used,
+        const int n_tokens,
+        const size_t down_nb1,
+        const size_t down_nb2,
+        const size_t weights_nb1,
+        const size_t shared_nb1,
+        const size_t out_nb1) {
+
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const int total = n_embd * n_tokens;
+    if (idx >= total) return;
+
+    const int h = idx % n_embd;
+    const int t = idx / n_embd;
+
+    float sum = 0.0f;
+    for (int e = 0; e < n_used; ++e) {
+        const float v = down_e[h + e * down_nb1 + t * down_nb2];
+        const float w = weights[e + t * weights_nb1];
+
+        const float p = __fmul_rn(v, w);
+        sum = (e == 0) ? p : __fadd_rn(sum, p);
+    }
+
+    if (shared_out != nullptr) {
+        const float sh = shared_out[h + t * shared_nb1];
+        sum = __fadd_rn(sh, sum);
+    }
+
+    output[h + t * out_nb1] = sum;
+}
+
 void ggml_cuda_op_ds4_moe_combine(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const ggml_tensor * down_e     = dst->src[0];
     const ggml_tensor * weights    = dst->src[1];
@@ -71,47 +109,72 @@ void ggml_cuda_op_ds4_moe_combine(ggml_backend_cuda_context & ctx, ggml_tensor *
     const int n_used   = (int) down_e->ne[1];
     const int n_tokens = (int) down_e->ne[2];
 
-    GGML_ASSERT(n_embd % 4 == 0 && "n_embd must be a multiple of 4 for float4 vectorization");
-    GGML_ASSERT(reinterpret_cast<uintptr_t>(down_e->data) % 16 == 0 && "down_e->data must be 16-byte aligned");
-    GGML_ASSERT(reinterpret_cast<uintptr_t>(dst->data) % 16 == 0 && "dst->data must be 16-byte aligned");
-    GGML_ASSERT(down_e->nb[0] == sizeof(float) && "down_e must be contiguous in dimension 0");
-    GGML_ASSERT(down_e->nb[1] % sizeof(float4) == 0 && "down_e->nb[1] must be divisible by sizeof(float4)");
-    GGML_ASSERT(down_e->nb[2] % sizeof(float4) == 0 && "down_e->nb[2] must be divisible by sizeof(float4)");
-    GGML_ASSERT(dst->nb[0] == sizeof(float) && "dst must be contiguous in dimension 0");
-    GGML_ASSERT(dst->nb[1] % sizeof(float4) == 0 && "dst->nb[1] must be divisible by sizeof(float4)");
-    if (shared_out != nullptr) {
-        GGML_ASSERT(reinterpret_cast<uintptr_t>(shared_out->data) % 16 == 0 && "shared_out->data must be 16-byte aligned");
-        GGML_ASSERT(shared_out->nb[0] == sizeof(float) && "shared_out must be contiguous in dimension 0");
-        GGML_ASSERT(shared_out->nb[1] % sizeof(float4) == 0 && "shared_out->nb[1] must be divisible by sizeof(float4)");
-    }
-
-    const int n_embd_vec4 = n_embd / 4;
-    const int total_threads = n_embd_vec4 * n_tokens;
-
-    const int block_size = 256;
-    const int grid_size = (total_threads + block_size - 1) / block_size;
-
-    const size_t down_nb1 = down_e->nb[1] / sizeof(float4);
-    const size_t down_nb2 = down_e->nb[2] / sizeof(float4);
-    const size_t weights_nb1 = weights->nb[1] / sizeof(float);
-    const size_t shared_nb1 = shared_out ? (shared_out->nb[1] / sizeof(float4)) : 0;
-    const size_t out_nb1 = dst->nb[1] / sizeof(float4);
-
     cudaStream_t stream = ctx.stream();
 
-    moe_fused_combine_shared_kernel_f32<<<grid_size, block_size, 0, stream>>>(
-        (const float4 *) down_e->data,
-        (const float *)  weights->data,
-        shared_out ? (const float4 *) shared_out->data : nullptr,
-        (float4 *) dst->data,
-        n_embd_vec4,
-        n_used,
-        n_tokens,
-        down_nb1,
-        down_nb2,
-        weights_nb1,
-        shared_nb1,
-        out_nb1
-    );
+    const bool is_vec4_aligned = (n_embd % 4 == 0) &&
+        (reinterpret_cast<uintptr_t>(down_e->data) % 16 == 0) &&
+        (reinterpret_cast<uintptr_t>(dst->data) % 16 == 0) &&
+        (down_e->nb[0] == sizeof(float)) &&
+        (dst->nb[0] == sizeof(float)) &&
+        (down_e->nb[1] % sizeof(float4) == 0) &&
+        (down_e->nb[2] % sizeof(float4) == 0) &&
+        (dst->nb[1] % sizeof(float4) == 0) &&
+        (shared_out == nullptr || (
+            reinterpret_cast<uintptr_t>(shared_out->data) % 16 == 0 &&
+            shared_out->nb[0] == sizeof(float) &&
+            shared_out->nb[1] % sizeof(float4) == 0));
+
+    if (is_vec4_aligned) {
+        const int n_embd_vec4 = n_embd / 4;
+        const int total_threads = n_embd_vec4 * n_tokens;
+        const int block_size = 256;
+        const int grid_size = (total_threads + block_size - 1) / block_size;
+
+        const size_t down_nb1 = down_e->nb[1] / sizeof(float4);
+        const size_t down_nb2 = down_e->nb[2] / sizeof(float4);
+        const size_t weights_nb1 = weights->nb[1] / sizeof(float);
+        const size_t shared_nb1 = shared_out ? (shared_out->nb[1] / sizeof(float4)) : 0;
+        const size_t out_nb1 = dst->nb[1] / sizeof(float4);
+
+        moe_fused_combine_shared_kernel_f32<<<grid_size, block_size, 0, stream>>>(
+            (const float4 *) down_e->data,
+            (const float *)  weights->data,
+            shared_out ? (const float4 *) shared_out->data : nullptr,
+            (float4 *) dst->data,
+            n_embd_vec4,
+            n_used,
+            n_tokens,
+            down_nb1,
+            down_nb2,
+            weights_nb1,
+            shared_nb1,
+            out_nb1
+        );
+    } else {
+        const int total_threads = n_embd * n_tokens;
+        const int block_size = 256;
+        const int grid_size = (total_threads + block_size - 1) / block_size;
+
+        const size_t down_nb1 = down_e->nb[1] / sizeof(float);
+        const size_t down_nb2 = down_e->nb[2] / sizeof(float);
+        const size_t weights_nb1 = weights->nb[1] / sizeof(float);
+        const size_t shared_nb1 = shared_out ? (shared_out->nb[1] / sizeof(float)) : 0;
+        const size_t out_nb1 = dst->nb[1] / sizeof(float);
+
+        moe_fused_combine_shared_kernel_scalar_f32<<<grid_size, block_size, 0, stream>>>(
+            (const float *) down_e->data,
+            (const float *) weights->data,
+            shared_out ? (const float *) shared_out->data : nullptr,
+            (float *) dst->data,
+            n_embd,
+            n_used,
+            n_tokens,
+            down_nb1,
+            down_nb2,
+            weights_nb1,
+            shared_nb1,
+            out_nb1
+        );
+    }
     CUDA_CHECK(cudaGetLastError());
 }
