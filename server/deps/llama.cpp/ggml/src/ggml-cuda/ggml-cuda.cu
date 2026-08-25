@@ -3719,6 +3719,7 @@ static void ggml_cuda_flush_peer_copy_batch(const char * reason) {
     }
 
     GGML_ASSERT(batch.src && batch.dst);
+    const int orig_device = ggml_cuda_get_device();
     ggml_cuda_set_device(batch.src->device);
     if (!batch.src->copy_event) {
         CUDA_CHECK(cudaEventCreateWithFlags(
@@ -3730,6 +3731,7 @@ static void ggml_cuda_flush_peer_copy_batch(const char * reason) {
     ggml_cuda_set_device(batch.dst->device);
     CUDA_CHECK(cudaStreamWaitEvent(
         batch.dst->stream(), batch.src->copy_event, 0));
+    ggml_cuda_set_device(orig_device);
 
     static const bool trace = [] {
         const char * value = getenv("GGML_CUDA_BATCH_PEER_COPY_TRACE");
@@ -3758,6 +3760,8 @@ static bool ggml_backend_cuda_cpy_tensor_async(ggml_backend_t backend_src, ggml_
     if (!ggml_backend_buffer_is_cuda(buf_src) || !ggml_backend_buffer_is_cuda(buf_dst)) {
         return false;
     }
+
+    const int orig_device = ggml_cuda_get_device();
 
     // device -> device copy
     ggml_backend_cuda_context * cuda_ctx_src = (ggml_backend_cuda_context *) backend_src->context;
@@ -3803,6 +3807,7 @@ static bool ggml_backend_cuda_cpy_tensor_async(ggml_backend_t backend_src, ggml_
                 batch.dst = cuda_ctx_dst;
                 batch.bytes += ggml_nbytes(dst);
                 batch.copies++;
+                ggml_cuda_set_device(orig_device);
                 return true;
             }
 #endif
@@ -3830,6 +3835,7 @@ static bool ggml_backend_cuda_cpy_tensor_async(ggml_backend_t backend_src, ggml_
 #endif
         CUDA_CHECK(cudaMemcpyAsync(dst->data, src->data, ggml_nbytes(dst), cudaMemcpyDeviceToDevice, cuda_ctx_src->stream()));
     }
+    ggml_cuda_set_device(orig_device);
     return true;
 }
 
