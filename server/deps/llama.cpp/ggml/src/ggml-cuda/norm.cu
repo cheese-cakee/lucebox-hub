@@ -300,13 +300,9 @@ static void rms_norm_f32_cuda(
     const dim3 blocks_num(nrows, nchannels, nsamples);
     if (ncols < 1024) {
         const dim3 block_dims(256, 1, 1);
-        std::fprintf(stderr, "[debug-rms-norm-kernel] launching 256 blocks=(%d,%d,%d) x=%p dst=%p ncols=%d nrows=%d s_row=%ld\n",
-            blocks_num.x, blocks_num.y, blocks_num.z, (const void*)x, (void*)dst, ncols, nrows, (long)stride_row);
         rms_norm_f32<256, false><<<blocks_num, block_dims, block_dims.x > WARP_SIZE ? 32 * sizeof(float): 0, stream>>>(x, dst, ncols, stride_row, stride_channel, stride_sample, eps);
     } else {
         const dim3 block_dims(1024, 1, 1);
-        std::fprintf(stderr, "[debug-rms-norm-kernel] launching 1024 blocks=(%d,%d,%d) x=%p dst=%p ncols=%d nrows=%d s_row=%ld\n",
-            blocks_num.x, blocks_num.y, blocks_num.z, (const void*)x, (void*)dst, ncols, nrows, (long)stride_row);
         rms_norm_f32<1024, false><<<blocks_num, block_dims, block_dims.x > WARP_SIZE ? 32 * sizeof(float): 0, stream>>>(x, dst, ncols, stride_row, stride_channel, stride_sample, eps);
     }
 }
@@ -459,10 +455,6 @@ void ggml_cuda_op_rms_norm(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     float * dst_d = (float *) dst->data;
     cudaStream_t stream = ctx.stream();
 
-    std::fprintf(stderr, "[debug-rms-norm] src0=%p (data=%p ne=[%ld,%ld]) dst=%p (data=%p ne=[%ld,%ld]) ctx.device=%d\n",
-        (void*)src0, (void*)src0_d, (long)src0->ne[0], (long)src0->ne[1],
-        (void*)dst, (void*)dst_d, (long)dst->ne[0], (long)dst->ne[1], ctx.device);
-
     GGML_ASSERT(src0->type == GGML_TYPE_F32);
     GGML_ASSERT( dst->type == GGML_TYPE_F32);
 
@@ -479,9 +471,6 @@ void ggml_cuda_op_rms_norm(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const int64_t s03 = nb03 / ts0;
 
     rms_norm_f32_cuda(src0_d, dst_d, ne00, ne01, ne02, ne03, s01, s02, s03, eps, stream);
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaStreamSynchronize(stream));
-    std::fprintf(stderr, "[debug-rms-norm] rms_norm_f32_cuda finished successfully\n");
 }
 
 void ggml_cuda_op_rms_norm_fused(ggml_backend_cuda_context & ctx, ggml_tensor * dst, ggml_tensor * mul_tensor) {

@@ -7413,7 +7413,6 @@ bool deepseek4_step_layer_range(
         const ggml_tensor * ffn_comb_backend = nullptr;
         const ggml_tensor * attn_split_backend = nullptr;
         const ggml_tensor * ffn_split_backend = nullptr;
-        std::fprintf(stderr, "[debug-trace] layer %d start n_tokens=%d\n", il, n_tokens);
         if (trace_prefill) {
             std::fprintf(stderr,
                          "[deepseek4-prefill-trace] layer=%d attention begin\n",
@@ -7422,7 +7421,6 @@ bool deepseek4_step_layer_range(
 
         // ── HC pre (attention) ──────────────────────────────────────
         const auto hc_pre_attn_t0 = Ds4TimingClock::now();
-        std::fprintf(stderr, "[debug-trace] layer %d hc_pre_attn use_backend_prefill_hc=%d\n", il, use_backend_prefill_hc ? 1 : 0);
         if (use_backend_prefill_hc) {
             const auto hc_pre_attn_build_t0 = Ds4TimingClock::now();
             if (!build_prefill_hc_pre_graph(
@@ -7435,15 +7433,10 @@ bool deepseek4_step_layer_range(
                              "layer %d attn\n", il);
                 return false;
             }
-            std::fprintf(stderr, "[debug-trace] layer %d build_prefill_hc_pre_graph OK\n", il);
             if (telemetry) telemetry->hc_pre_build_us += ds4_elapsed_us(
                 hc_pre_attn_build_t0, Ds4TimingClock::now());
-            std::fprintf(stderr, "[debug-hc-copy] hc_state_backend=%p (data=%p nbytes=%zu buf=%p) inp_embed=%p (data=%p nbytes=%zu buf=%p)\n",
-                (void*)hc_state_backend, hc_state_backend ? hc_state_backend->data : nullptr, hc_state_backend ? ggml_nbytes(hc_state_backend) : 0, hc_state_backend ? (void*)hc_state_backend->buffer : nullptr,
-                (void*)prefill_hc_pre_graph.sg.inp_embed, prefill_hc_pre_graph.sg.inp_embed ? prefill_hc_pre_graph.sg.inp_embed->data : nullptr, prefill_hc_pre_graph.sg.inp_embed ? ggml_nbytes(prefill_hc_pre_graph.sg.inp_embed) : 0, prefill_hc_pre_graph.sg.inp_embed ? (void*)prefill_hc_pre_graph.sg.inp_embed->buffer : nullptr);
             ggml_backend_tensor_copy(hc_state_backend,
                                      prefill_hc_pre_graph.sg.inp_embed);
-            std::fprintf(stderr, "[debug-trace] layer %d ggml_backend_tensor_copy inp_embed OK\n", il);
             const auto hc_pre_attn_compute_t0 = Ds4TimingClock::now();
             if (ggml_backend_graph_compute(
                     backend, prefill_hc_pre_graph.sg.gf) !=
@@ -7453,7 +7446,6 @@ bool deepseek4_step_layer_range(
                              "layer %d attn\n", il);
                 return false;
             }
-            std::fprintf(stderr, "[debug-trace] layer %d prefill_hc_pre_graph compute OK\n", il);
             if (telemetry) telemetry->hc_pre_compute_us += ds4_elapsed_us(
                 hc_pre_attn_compute_t0, Ds4TimingClock::now());
             attn_in_backend = prefill_hc_pre_graph.sg.hidden_states;
@@ -7689,14 +7681,12 @@ bool deepseek4_step_layer_range(
                     cache.prefill_mode == PrefillAttentionMode::Sparse
                         ? DeepSeek4AttentionImpl::SparseFlash
                         : DeepSeek4AttentionImpl::Explicit;
-                std::fprintf(stderr, "[debug-trace] layer %d calling build_mla_attention n_tokens=%d\n", il, n_tokens);
                 attn_out = build_mla_attention(ctx, gf, normed, w, L, lc, il,
                                                kv_start, n_tokens, nullptr,
                                                i32_inputs, i32_array_inputs,
                                                i64_array_inputs,
                                                &f32_array_inputs,
                                                attention_impl);
-                std::fprintf(stderr, "[debug-trace] layer %d build_mla_attention OK\n", il);
                 ggml_set_output(attn_out);
                 ggml_build_forward_expand(gf, attn_out);
 
@@ -7887,13 +7877,11 @@ bool deepseek4_step_layer_range(
 
             if (!exact_tokenwise_prefill) {
             const auto attn_compute_t0 = Ds4TimingClock::now();
-            std::fprintf(stderr, "[debug-trace] layer %d calling ggml_backend_graph_compute(backend, gf)\n", il);
             if (ggml_backend_graph_compute(backend, gf) != GGML_STATUS_SUCCESS) {
                 std::fprintf(stderr, "[deepseek4] attn compute failed layer %d\n", il);
                 if (ctx) ggml_free(ctx);
                 return false;
             }
-            std::fprintf(stderr, "[debug-trace] layer %d ggml_backend_graph_compute(backend, gf) OK\n", il);
             if (telemetry) telemetry->attn_compute_us += ds4_elapsed_us(attn_compute_t0, Ds4TimingClock::now());
             if (trace_prefill) {
                 std::fprintf(stderr,
@@ -8174,7 +8162,6 @@ bool deepseek4_step_layer_range(
                     owner_outputs.cold =
                         prefill_moe_hc_post_graph.block_out_cold;
                 }
-                std::fprintf(stderr, "[debug-trace] layer %d calling eval_ds4_layer_range_hybrid_ffn ffn_device_join=%d\n", il, ffn_device_join ? 1 : 0);
                 if (!eval_ds4_layer_range_hybrid_ffn(
                         backend, w, L, il, n_tokens,
                         ffn_working.data(), ffn_in_backend,
@@ -8187,7 +8174,6 @@ bool deepseek4_step_layer_range(
                                  il);
                     return false;
                 }
-                std::fprintf(stderr, "[debug-trace] layer %d eval_ds4_layer_range_hybrid_ffn OK\n", il);
             } else {
                 if (hash_routed) {
                     const int n_used = n_expert_used;
